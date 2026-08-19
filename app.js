@@ -5,6 +5,7 @@ const state = {
   city: "",
   disease: "",
   range: "14",
+  startDate: "",
   points: [],
   chartPoints: [],
 };
@@ -13,19 +14,9 @@ const elements = {
   city: document.querySelector("#city-select"),
   disease: document.querySelector("#disease-select"),
   range: document.querySelector("#range-options"),
+  startDate: document.querySelector("#start-date"),
   status: document.querySelector("#status"),
   dashboard: document.querySelector("#dashboard"),
-  updatedAt: document.querySelector("#updated-at"),
-  coverage: document.querySelector("#coverage"),
-  latestValue: document.querySelector("#latest-value"),
-  latestDate: document.querySelector("#latest-date"),
-  periodChange: document.querySelector("#period-change"),
-  periodChangeDetail: document.querySelector("#period-change-detail"),
-  peakValue: document.querySelector("#peak-value"),
-  peakDate: document.querySelector("#peak-date"),
-  historyDays: document.querySelector("#history-days"),
-  chartKicker: document.querySelector("#chart-kicker"),
-  chartTitle: document.querySelector("#chart-title"),
   canvas: document.querySelector("#trend-chart"),
   tooltip: document.querySelector("#chart-tooltip"),
   table: document.querySelector("#data-table"),
@@ -79,8 +70,23 @@ function selectedSeries() {
 
 function visiblePoints(series) {
   if (!series) return [];
+  if (state.range === "custom") {
+    return series.points.filter(([date]) => date >= state.startDate);
+  }
   if (state.range === "all") return series.points;
   return series.points.slice(-Number(state.range));
+}
+
+function updateDateBounds(series) {
+  if (!series?.points.length) return;
+  elements.startDate.min = series.points[0][0];
+  elements.startDate.max = series.points.at(-1)[0];
+}
+
+function updateRangeButtons() {
+  elements.range.querySelectorAll("button").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.range === state.range));
+  });
 }
 
 function syncUrl() {
@@ -88,27 +94,12 @@ function syncUrl() {
   url.searchParams.set("city", state.city.replace(/市$/, ""));
   url.searchParams.set("disease", state.disease);
   url.searchParams.set("range", state.range);
+  if (state.range === "custom" && state.startDate) {
+    url.searchParams.set("start", state.startDate);
+  } else {
+    url.searchParams.delete("start");
+  }
   history.replaceState(null, "", url);
-}
-
-function renderMetrics(series, points) {
-  const latest = points.at(-1);
-  const first = points[0];
-  const peak = points.reduce((best, point) => (point[1] > best[1] ? point : best), points[0]);
-  const difference = latest[1] - first[1];
-  const percentage = first[1] === 0 ? null : (difference / first[1]) * 100;
-
-  elements.latestValue.textContent = formatValue.format(latest[1]);
-  elements.latestDate.textContent = displayDate(latest[0]);
-  elements.periodChange.textContent = `${difference > 0 ? "+" : ""}${formatValue.format(difference)}`;
-  elements.periodChange.classList.toggle("positive", difference > 0);
-  elements.periodChange.classList.toggle("negative", difference < 0);
-  elements.periodChangeDetail.textContent = percentage === null
-    ? `${displayDate(first[0])} 至今`
-    : `${percentage > 0 ? "+" : ""}${percentage.toFixed(1)}% · ${displayDate(first[0])} 至今`;
-  elements.peakValue.textContent = formatValue.format(peak[1]);
-  elements.peakDate.textContent = displayDate(peak[0]);
-  elements.historyDays.textContent = `${series.points.length} 天`;
 }
 
 function renderTable(points) {
@@ -256,21 +247,20 @@ function showTooltip(event) {
 
 function render() {
   const series = selectedSeries();
+  updateDateBounds(series);
   const points = visiblePoints(series);
   if (!series || points.length === 0) {
-    showError("这个组合暂时没有可显示的数据。");
+    showError("所选起始日期之后暂无数据。");
+    syncUrl();
     return;
   }
   state.points = points;
   elements.status.hidden = true;
   elements.dashboard.hidden = false;
-  elements.chartKicker.textContent = `${state.city} · ${state.disease}`;
-  elements.chartTitle.textContent = `${state.range === "all" ? "全部历史" : `最近 ${state.range} 天`}趋势`;
   elements.canvas.setAttribute(
     "aria-label",
-    `${state.city}${state.disease}${elements.chartTitle.textContent}，从 ${displayDate(points[0][0])} 到 ${displayDate(points.at(-1)[0])}`,
+    `${state.city}${state.disease}趋势图，从 ${displayDate(points[0][0])} 到 ${displayDate(points.at(-1)[0])}`,
   );
-  renderMetrics(series, points);
   renderTable(points);
   requestAnimationFrame(() => drawChart(points));
   syncUrl();
@@ -285,7 +275,8 @@ function downloadCsv() {
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `${state.city}-${state.disease}-${state.range}天.csv`;
+  const rangeLabel = state.range === "custom" ? `起始-${state.startDate}` : state.range;
+  anchor.download = `${state.city}-${state.disease}-${rangeLabel}.csv`;
   anchor.click();
   URL.revokeObjectURL(url);
 }
@@ -303,9 +294,15 @@ function bindEvents() {
     const button = event.target.closest("button[data-range]");
     if (!button) return;
     state.range = button.dataset.range;
-    elements.range.querySelectorAll("button").forEach((item) => {
-      item.setAttribute("aria-pressed", String(item === button));
-    });
+    state.startDate = "";
+    elements.startDate.value = "";
+    updateRangeButtons();
+    render();
+  });
+  elements.startDate.addEventListener("change", () => {
+    state.startDate = elements.startDate.value;
+    state.range = state.startDate ? "custom" : "all";
+    updateRangeButtons();
     render();
   });
   elements.download.addEventListener("click", downloadCsv);
@@ -335,34 +332,31 @@ async function start() {
     const cities = unique(documentData.series.map((item) => item.city));
     const diseases = unique(documentData.series.map((item) => item.disease));
     const requestedCity = params.get("city");
-    const normalizedCity = cities.find((city) => city === requestedCity || city.replace(/市$/, "") === requestedCity);
+    const normalizedCity = cities.find(
+      (city) => city === requestedCity || city.replace(/市$/, "") === requestedCity,
+    );
     state.city = normalizedCity || cities.find((city) => city === "杭州市") || cities[0];
     state.disease = diseases.includes(params.get("disease"))
       ? params.get("disease")
       : diseases.find((disease) => disease === "新冠") || diseases[0];
-    state.range = ["14", "30", "90", "all"].includes(params.get("range")) ? params.get("range") : "14";
+
+    const requestedRange = params.get("range");
+    const requestedStart = params.get("start") || "";
+    if (requestedRange === "custom" && /^\d{4}-\d{2}-\d{2}$/.test(requestedStart)) {
+      state.range = "custom";
+      state.startDate = requestedStart;
+    } else {
+      state.range = ["14", "30", "90", "all"].includes(requestedRange) ? requestedRange : "14";
+      state.startDate = "";
+    }
 
     fillSelect(elements.city, cities, state.city);
     fillSelect(elements.disease, diseases, state.disease);
-    elements.range.querySelectorAll("button").forEach((button) => {
-      button.setAttribute("aria-pressed", String(button.dataset.range === state.range));
-    });
-
-    const allDates = documentData.series.flatMap((item) => item.points.map((point) => point[0]));
-    const minDate = allDates.reduce((a, b) => (a < b ? a : b));
-    const maxDate = allDates.reduce((a, b) => (a > b ? a : b));
-    elements.updatedAt.textContent = new Intl.DateTimeFormat("zh-CN", {
-      timeZone: "Asia/Shanghai",
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(documentData.updated_at));
-    elements.coverage.textContent = `${displayDate(minDate)} — ${displayDate(maxDate)}`;
+    elements.startDate.value = state.startDate;
+    updateRangeButtons();
     render();
   } catch (error) {
-    showError("数据暂时无法载入，请稍后刷新。上一版数据不会因抓取失败而被覆盖。");
+    showError("数据暂时无法载入，请稍后刷新。");
     console.error(error);
   }
 }
