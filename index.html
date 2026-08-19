@@ -7,12 +7,12 @@
     <meta name="theme-color" content="#f7b733" />
     <meta
       name="description"
-      content="选择城市、病种和起始日期，查看并导出美团指数历史数据。"
+      content="选择城市、病种和日期范围，查看并导出美团指数历史数据。"
     />
     <meta property="og:title" content="美团指数存档" />
     <meta
       property="og:description"
-      content="选择城市、病种和起始日期，查看并导出美团指数历史数据。"
+      content="选择城市、病种和日期范围，查看并导出美团指数历史数据。"
     />
     <meta property="og:type" content="website" />
     <title>美团指数存档</title>
@@ -23,7 +23,7 @@
     <main class="page-shell">
       <header class="page-heading">
         <h1>美团指数存档</h1>
-        <p>选择城市、病种和起始日期，查看并导出美团指数历史数据。</p>
+        <p>选择城市、病种和日期范围，查看并导出美团指数历史数据。</p>
       </header>
 
       <section class="query-panel" aria-label="查询条件">
@@ -45,8 +45,12 @@
           </div>
         </fieldset>
         <label>
-          <span>自定义起始日期</span>
+          <span>起始日期</span>
           <input id="start-date" type="date" aria-label="选择自定义起始日期" />
+        </label>
+        <label>
+          <span>结束日期</span>
+          <input id="end-date" type="date" aria-label="选择自定义结束日期" />
         </label>
       </section>
 

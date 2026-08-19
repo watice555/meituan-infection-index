@@ -33,7 +33,7 @@ class PageTests(unittest.TestCase):
         parser.feed(html)
         self.assertIn(("h1", "美团指数存档"), parser.text)
         self.assertIn(
-            ("p", "选择城市、病种和起始日期，查看并导出美团指数历史数据。"),
+            ("p", "选择城市、病种和日期范围，查看并导出美团指数历史数据。"),
             parser.text,
         )
         self.assertEqual([text for tag, text in parser.text if tag == "h2"], ["趋势图", "列表数据"])
@@ -48,13 +48,15 @@ class PageTests(unittest.TestCase):
         ):
             self.assertNotIn(removed, html)
 
-    def test_custom_start_date_is_wired_to_filter_and_url(self) -> None:
+    def test_custom_date_range_is_wired_to_filter_and_url(self) -> None:
         html = (ROOT / "index.html").read_text(encoding="utf-8")
         javascript = (ROOT / "app.js").read_text(encoding="utf-8")
         self.assertIn('id="start-date" type="date"', html)
-        self.assertIn('date >= state.startDate', javascript)
+        self.assertIn('id="end-date" type="date"', html)
+        self.assertIn('date >= state.startDate && date <= state.endDate', javascript)
         self.assertIn('url.searchParams.set("start", state.startDate)', javascript)
-        self.assertIn('state.range = state.startDate ? "custom" : "all"', javascript)
+        self.assertIn('url.searchParams.set("end", state.endDate)', javascript)
+        self.assertIn('state.endDate = state.endDate || series.points.at(-1)[0]', javascript)
 
 
 if __name__ == "__main__":

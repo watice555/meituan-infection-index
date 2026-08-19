@@ -76,7 +76,12 @@ input:focus-visible {
 
 .query-panel {
   display: grid;
-  grid-template-columns: minmax(140px, 0.75fr) minmax(180px, 1fr) auto minmax(180px, 0.8fr);
+  grid-template-columns:
+    minmax(120px, 0.7fr)
+    minmax(160px, 0.9fr)
+    auto
+    minmax(155px, 0.75fr)
+    minmax(155px, 0.75fr);
   gap: 14px;
   align-items: end;
   padding: 18px;
