@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#f7b733" />
+    <meta
+      name="description"
+      content="查询杭州、上海、北京、深圳、广州的美团传染病指数历史趋势。"
+    />
+    <meta property="og:title" content="城市传染病指数" />
+    <meta
+      property="og:description"
+      content="五个城市、五种指数，一处查看历史趋势与每日明细。"
+    />
+    <meta property="og:type" content="website" />
+    <title>城市传染病指数</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="masthead">
+        <a class="brand" href="./" aria-label="城市传染病指数首页">
+          <span class="brand-mark" aria-hidden="true">趋</span>
+          <span>城市传染病指数</span>
+        </a>
+        <span class="unofficial">非官方历史记录</span>
+      </header>
+
+      <main>
+        <section class="hero" aria-labelledby="page-title">
+          <div class="hero-copy">
+            <p class="eyebrow">每天留住滚动的 14 天</p>
+            <h1 id="page-title">看见城市健康关注度的变化</h1>
+            <p class="hero-description">
+              汇总杭州、上海、北京、深圳、广州五座城市的美团传染病指数，持续保存每日历史。
+            </p>
+          </div>
+          <div class="update-card" aria-live="polite">
+            <span>数据更新</span>
+            <strong id="updated-at">正在载入…</strong>
+            <small id="coverage">—</small>
+          </div>
+        </section>
+
+        <section class="query-panel" aria-label="查询条件">
+          <label>
+            <span>城市</span>
+            <select id="city-select" aria-label="选择城市"></select>
+          </label>
+          <label>
+            <span>指数</span>
+            <select id="disease-select" aria-label="选择指数"></select>
+          </label>
+          <fieldset class="range-control">
+            <legend>时间范围</legend>
+            <div id="range-options" class="range-options">
+              <button type="button" data-range="14" aria-pressed="true">14 天</button>
+              <button type="button" data-range="30" aria-pressed="false">30 天</button>
+              <button type="button" data-range="90" aria-pressed="false">90 天</button>
+              <button type="button" data-range="all" aria-pressed="false">全部</button>
+            </div>
+          </fieldset>
+        </section>
+
+        <section id="status" class="status" role="status" hidden></section>
+
+        <section id="dashboard" class="dashboard" hidden>
+          <div class="metric-grid" aria-label="指数摘要">
+            <article class="metric-card metric-primary">
+              <span>最新指数</span>
+              <strong id="latest-value">—</strong>
+              <small id="latest-date">—</small>
+            </article>
+            <article class="metric-card">
+              <span>区间变化</span>
+              <strong id="period-change">—</strong>
+              <small id="period-change-detail">—</small>
+            </article>
+            <article class="metric-card">
+              <span>区间峰值</span>
+              <strong id="peak-value">—</strong>
+              <small id="peak-date">—</small>
+            </article>
+            <article class="metric-card">
+              <span>历史天数</span>
+              <strong id="history-days">—</strong>
+              <small>已连续保存</small>
+            </article>
+          </div>
+
+          <article class="chart-card">
+            <div class="card-heading">
+              <div>
+                <p id="chart-kicker" class="chart-kicker">—</p>
+                <h2 id="chart-title">指数趋势</h2>
+              </div>
+              <div class="chart-legend"><span aria-hidden="true"></span>指数值</div>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="trend-chart" role="img" aria-label="指数趋势折线图"></canvas>
+              <div id="chart-tooltip" class="chart-tooltip" hidden></div>
+            </div>
+          </article>
+
+          <article class="table-card">
+            <div class="card-heading table-heading">
+              <div>
+                <p class="chart-kicker">可核对、可带走</p>
+                <h2>每日明细</h2>
+              </div>
+              <button id="download-csv" class="download-button" type="button">下载当前 CSV</button>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">日期</th>
+                    <th scope="col">城市</th>
+                    <th scope="col">指数</th>
+                    <th scope="col" class="numeric">指数值</th>
+                  </tr>
+                </thead>
+                <tbody id="data-table"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <section class="notes" aria-label="说明">
+          <h2>读数说明</h2>
+          <p>
+            本站记录的是美团 App 页面展示的“传染病指数”，反映搜索关注度，不等同于病例数、发病率或官方疫情数据。数据仅供趋势观察，不构成医疗建议。
+          </p>
+        </section>
+      </main>
+
+      <footer>
+        <span>数据来源：美团 App 传染病指数</span>
+        <a href="https://github.com/watice555/meituan-infection-index">查看项目</a>
+      </footer>
+    </div>
+  </body>
+</html>
