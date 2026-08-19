@@ -58,6 +58,13 @@ class PageTests(unittest.TestCase):
         self.assertIn('url.searchParams.set("end", state.endDate)', javascript)
         self.assertIn('state.endDate = state.endDate || series.points.at(-1)[0]', javascript)
 
+    def test_page_loads_manifest_then_selected_city_only(self) -> None:
+        javascript = (ROOT / "app.js").read_text(encoding="utf-8")
+        self.assertIn('fetch("./data/manifest.json"', javascript)
+        self.assertIn('fetch(`./data/${record.file}`', javascript)
+        self.assertIn("manifest.version !== 2", javascript)
+        self.assertNotIn('fetch("./data/indexes.json"', javascript)
+
 
 if __name__ == "__main__":
     unittest.main()

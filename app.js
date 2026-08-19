@@ -1,6 +1,7 @@
 "use strict";
 
 const state = {
+  manifest: null,
   document: null,
   city: "",
   disease: "",
@@ -10,6 +11,9 @@ const state = {
   points: [],
   chartPoints: [],
 };
+
+const cityCache = new Map();
+let activeCityRequest = 0;
 
 const elements = {
   city: document.querySelector("#city-select"),
@@ -52,6 +56,12 @@ function showError(message) {
   elements.dashboard.hidden = true;
 }
 
+function showLoading() {
+  elements.status.textContent = "数据载入中…";
+  elements.status.hidden = false;
+  elements.dashboard.hidden = true;
+}
+
 function fillSelect(select, options, selected) {
   select.replaceChildren(
     ...options.map((option) => {
@@ -68,6 +78,42 @@ function selectedSeries() {
   return state.document.series.find(
     (item) => item.city === state.city && item.disease === state.disease,
   );
+}
+
+async function fetchCityDocument(city) {
+  const record = state.manifest.cities.find((item) => item.city === city);
+  if (!record || !/^cities\/\d{6}\.json$/.test(record.file)) {
+    throw new Error("城市数据路径无效");
+  }
+  if (cityCache.has(record.city_id)) return cityCache.get(record.city_id);
+  const response = await fetch(`./data/${record.file}`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const documentData = await response.json();
+  if (
+    documentData.version !== 1
+    || documentData.city !== record.city
+    || String(documentData.city_id) !== String(record.city_id)
+    || !Array.isArray(documentData.series)
+  ) {
+    throw new Error("城市数据格式无效");
+  }
+  cityCache.set(record.city_id, documentData);
+  return documentData;
+}
+
+async function activateCity(preferredDisease, shouldRender = true) {
+  const requestId = ++activeCityRequest;
+  showLoading();
+  const documentData = await fetchCityDocument(state.city);
+  if (requestId !== activeCityRequest) return false;
+  state.document = documentData;
+  const diseases = unique(documentData.series.map((item) => item.disease));
+  state.disease = diseases.includes(preferredDisease)
+    ? preferredDisease
+    : diseases.find((disease) => disease === "新冠") || diseases[0];
+  fillSelect(elements.disease, diseases, state.disease);
+  if (shouldRender) render();
+  return true;
 }
 
 function visiblePoints(series) {
@@ -292,9 +338,14 @@ function downloadCsv() {
 }
 
 function bindEvents() {
-  elements.city.addEventListener("change", () => {
+  elements.city.addEventListener("change", async () => {
     state.city = elements.city.value;
-    render();
+    try {
+      await activateCity(state.disease);
+    } catch (error) {
+      showError("数据暂时无法载入，请稍后刷新。");
+      console.error(error);
+    }
   });
   elements.disease.addEventListener("change", () => {
     state.disease = elements.disease.value;
@@ -363,24 +414,22 @@ function bindEvents() {
 async function start() {
   bindEvents();
   try {
-    const response = await fetch("./data/indexes.json", { cache: "no-store" });
+    const response = await fetch("./data/manifest.json", { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const documentData = await response.json();
-    if (documentData.version !== 1 || !Array.isArray(documentData.series)) {
+    const manifest = await response.json();
+    if (manifest.version !== 2 || !Array.isArray(manifest.cities) || !manifest.cities.length) {
       throw new Error("数据格式无效");
     }
-    state.document = documentData;
+    state.manifest = manifest;
     const params = new URLSearchParams(window.location.search);
-    const cities = unique(documentData.series.map((item) => item.city));
-    const diseases = unique(documentData.series.map((item) => item.disease));
+    const cities = manifest.cities.map((item) => item.city);
     const requestedCity = params.get("city");
     const normalizedCity = cities.find(
       (city) => city === requestedCity || city.replace(/市$/, "") === requestedCity,
     );
     state.city = normalizedCity || cities.find((city) => city === "杭州市") || cities[0];
-    state.disease = diseases.includes(params.get("disease"))
-      ? params.get("disease")
-      : diseases.find((disease) => disease === "新冠") || diseases[0];
+    fillSelect(elements.city, cities, state.city);
+    await activateCity(params.get("disease"), false);
 
     const requestedRange = params.get("range");
     const requestedStart = params.get("start") || "";
@@ -400,8 +449,6 @@ async function start() {
       state.endDate = "";
     }
 
-    fillSelect(elements.city, cities, state.city);
-    fillSelect(elements.disease, diseases, state.disease);
     elements.startDate.value = state.startDate;
     elements.endDate.value = state.endDate;
     updateRangeButtons();

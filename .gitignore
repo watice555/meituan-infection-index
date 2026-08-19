@@ -1,4 +1,6 @@
 data/indexes.json
+data/manifest.json
+data/cities/
 __pycache__/
 *.py[cod]
 .DS_Store
