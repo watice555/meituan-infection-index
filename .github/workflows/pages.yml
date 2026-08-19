@@ -6,7 +6,7 @@ on:
     - cron: "20 0 * * *"
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -35,6 +35,20 @@ jobs:
             404) rm -f "${RUNNER_TEMP}/history.json"; echo "首次发布，无历史数据" ;;
             *) echo "恢复历史失败（HTTP ${status}），停止本次发布" >&2; exit 1 ;;
           esac
+
+      - name: 保持定时工作流活跃
+        if: github.event_name == 'schedule'
+        run: |
+          last_commit="$(git log -1 --format=%ct)"
+          age_days="$(( ($(date +%s) - last_commit) / 86400 ))"
+          if (( age_days >= 30 )); then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "Keep scheduled index refresh active"
+            git push origin HEAD:main
+          else
+            echo "最近一次仓库活动距今 ${age_days} 天，无需保活提交"
+          fi
 
       - name: 抓取并合并五城指数
         env:
