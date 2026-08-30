@@ -1,19 +1,23 @@
 from __future__ import annotations
 
 import json
+import socket
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from scripts.fetch_data import (
     CITIES,
+    ENDPOINT,
     FetchError,
     MATERIAL_IDS,
     extract_series,
+    load_template,
     load_history,
     merge_series,
     normalize_date,
+    post_index,
     validate_document,
     write_documents,
 )
@@ -38,6 +42,55 @@ def sample_payload(city: str = "杭州市", value: float = 100.0) -> dict:
 
 
 class FetchDataTests(unittest.TestCase):
+    def test_load_template_removes_legacy_dj_token(self) -> None:
+        template = {
+            "version": 1,
+            "endpoint": ENDPOINT,
+            "headers": {"content-type": "application/json", "dj-token": "expired"},
+            "body": {"materialId": ["16426"]},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "request.json"
+            path.write_text(json.dumps(template), encoding="utf-8")
+            loaded = load_template(path)
+        self.assertEqual(loaded["headers"], {"content-type": "application/json"})
+
+    def test_post_index_retries_read_timeout(self) -> None:
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps(sample_payload()).encode()
+        template = {"headers": {}, "body": {"materialId": ["16426"]}}
+        with (
+            patch(
+                "scripts.fetch_data.urllib.request.urlopen",
+                side_effect=[socket.timeout("timed out"), response],
+            ) as urlopen,
+            patch("scripts.fetch_data.time.sleep") as sleep,
+        ):
+            payload = post_index(template, "330100", "16426", timeout=1)
+        self.assertTrue(payload["success"])
+        self.assertEqual(urlopen.call_count, 2)
+        sleep.assert_called_once_with(1)
+
+    def test_post_index_retries_generic_business_rejection(self) -> None:
+        rejected = MagicMock()
+        rejected.__enter__.return_value.read.return_value = json.dumps(
+            {"code": -1, "success": False, "msg": None}
+        ).encode()
+        accepted = MagicMock()
+        accepted.__enter__.return_value.read.return_value = json.dumps(sample_payload()).encode()
+        template = {"headers": {}, "body": {"materialId": ["16426"]}}
+        with (
+            patch(
+                "scripts.fetch_data.urllib.request.urlopen",
+                side_effect=[rejected, accepted],
+            ) as urlopen,
+            patch("scripts.fetch_data.time.sleep") as sleep,
+        ):
+            payload = post_index(template, "330100", "16426", timeout=1)
+        self.assertTrue(payload["success"])
+        self.assertEqual(urlopen.call_count, 2)
+        sleep.assert_called_once_with(1)
+
     def test_normalize_date(self) -> None:
         self.assertEqual(normalize_date("20260818"), "2026-08-18")
 

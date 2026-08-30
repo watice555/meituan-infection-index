@@ -7,7 +7,7 @@ import argparse
 import copy
 import datetime as dt
 import json
-import os
+import socket
 from pathlib import Path
 import tempfile
 import time
@@ -99,17 +99,19 @@ def normalize_date(value: Any) -> str:
     raise FetchError(f"无法识别指数日期：{raw!r}")
 
 
-def load_template(path: Path, token: str) -> dict[str, Any]:
+def load_template(path: Path) -> dict[str, Any]:
     template = json.loads(path.read_text(encoding="utf-8"))
     if template.get("version") != 1 or template.get("endpoint") != ENDPOINT:
         raise FetchError("请求模板版本或目标接口无效")
-    if not token.strip():
-        raise FetchError("缺少 MEITUAN_DJ_TOKEN")
     headers = template.get("headers")
     body = template.get("body")
     if not isinstance(headers, dict) or not isinstance(body, dict):
         raise FetchError("请求模板缺少 headers 或 body")
-    template["headers"] = {**headers, "dj-token": token.strip()}
+    template["headers"] = {
+        str(key): value
+        for key, value in headers.items()
+        if str(key).lower() != "dj-token"
+    }
     return template
 
 
@@ -120,44 +122,52 @@ def post_index(
     timeout: float,
     attempts: int = 3,
 ) -> dict[str, Any]:
-    body = copy.deepcopy(template["body"])
-    body.update(
-        {
-            "city_id": int(city_id),
-            "scene": 1,
-            "materialId": [str(material_id)],
-            "req_time": int(time.time() * 1000),
-        }
-    )
-    request = urllib.request.Request(
-        ENDPOINT,
-        data=json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
-        headers={str(key): str(value) for key, value in template["headers"].items()},
-        method="POST",
-    )
+    context = f"city_id={city_id} materialId={material_id}"
     for attempt in range(attempts):
+        body = copy.deepcopy(template["body"])
+        body.update(
+            {
+                "city_id": int(city_id),
+                "scene": 1,
+                "materialId": [str(material_id)],
+                "req_time": int(time.time() * 1000),
+            }
+        )
+        request = urllib.request.Request(
+            ENDPOINT,
+            data=json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
+            headers={str(key): str(value) for key, value in template["headers"].items()},
+            method="POST",
+        )
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 payload = json.loads(response.read())
-            break
         except urllib.error.HTTPError as exc:
             retryable = exc.code == 429 or exc.code >= 500
             if not retryable or attempt + 1 == attempts:
-                raise FetchError(f"美团接口返回 HTTP {exc.code}") from exc
-        except urllib.error.URLError as exc:
+                raise FetchError(f"{context} 美团接口返回 HTTP {exc.code}") from exc
+        except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
             if attempt + 1 == attempts:
-                raise FetchError(f"无法连接美团接口：{exc.reason}") from exc
+                reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+                raise FetchError(f"{context} 无法连接美团接口：{reason}") from exc
         except json.JSONDecodeError as exc:
-            raise FetchError("美团接口返回了非 JSON 内容") from exc
+            if attempt + 1 == attempts:
+                raise FetchError(f"{context} 美团接口返回了非 JSON 内容") from exc
+        else:
+            if isinstance(payload, dict) and payload.get("code") == 0 and payload.get("success") is True:
+                return payload
+            code = payload.get("code") if isinstance(payload, dict) else None
+            message = (
+                payload.get("msg") or payload.get("message")
+                if isinstance(payload, dict)
+                else None
+            )
+            if code != -1 or attempt + 1 == attempts:
+                raise FetchError(
+                    f"{context} 美团接口拒绝请求（code={code}, msg={message!r}）"
+                )
         time.sleep(2**attempt)
-    else:  # pragma: no cover - loop always raises or breaks
-        raise FetchError("美团接口请求失败")
-
-    if not isinstance(payload, dict) or payload.get("code") != 0 or payload.get("success") is not True:
-        code = payload.get("code") if isinstance(payload, dict) else None
-        message = payload.get("msg") if isinstance(payload, dict) else None
-        raise FetchError(f"美团接口拒绝请求（code={code}, msg={message!r}）")
-    return payload
+    raise FetchError(f"{context} 美团接口请求失败")  # pragma: no cover
 
 
 def extract_series(
@@ -350,19 +360,19 @@ def write_documents(output_dir: Path, document: dict[str, Any]) -> dict[str, Any
 
 def collect(
     template_path: Path,
-    token: str,
     history_path: Path | None,
     output_dir: Path,
     timeout: float,
     delay: float,
 ) -> dict[str, Any]:
-    template = load_template(template_path, token)
+    template = load_template(template_path)
     history = load_history(history_path)
     fresh: list[dict[str, Any]] = []
     for index, (city, city_id) in enumerate(CITIES):
         if index and delay:
             time.sleep(delay)
         fresh.extend(fetch_city(template, city, city_id, timeout, delay))
+        print(f"已抓取 {city}（{index + 1}/{len(CITIES)}）", flush=True)
     document = {
         "version": 1,
         "updated_at": utc_now(),
@@ -387,7 +397,6 @@ def main() -> int:
     args = build_parser().parse_args()
     document = collect(
         args.template,
-        os.environ.get("MEITUAN_DJ_TOKEN", ""),
         args.history,
         args.output_dir,
         args.timeout,

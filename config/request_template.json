@@ -32,7 +32,6 @@
     "req_time": 0,
     "scene": 1,
     "supportFilter": 2,
-    "token": "",
     "userId": "",
     "userid": "",
     "utm_campaign": "AgroupBgroupG",
@@ -50,7 +49,6 @@
     "wm_did": "",
     "wm_dtype": "iPhone",
     "wm_dversion": "26.6",
-    "wm_logintoken": "",
     "wm_uuid": "",
     "wm_visitid": ""
   }

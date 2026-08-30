@@ -43,8 +43,6 @@ jobs:
           fi
 
       - name: 抓取并合并 56 城指数
-        env:
-          MEITUAN_DJ_TOKEN: ${{ secrets.MEITUAN_DJ_TOKEN }}
         run: |
           args=(--output-dir data)
           if [[ -f "${RUNNER_TEMP}/history/manifest.json" || -f "${RUNNER_TEMP}/history/indexes.json" ]]; then
