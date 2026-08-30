@@ -2,7 +2,27 @@
 
 一个非官方的美团 App“传染病指数”历史查询站。页面完全静态，发布在 GitHub Pages；GitHub Actions 每天抓取 56 个可用城市的最近 14 天数据，与已发布历史合并后重新发布。
 
-站点地址：<https://watice555.github.io/meituan-infection-index/>
+站点地址：[美团指数存档](https://watice555.github.io/meituan-infection-index/)
+
+本项目现独立放在 `~/Projects_local/meituan-infection-index`，不依赖 `daily_report` 的代码、虚拟环境或配置。
+
+## 项目结构
+
+- `index.html`、`app.js`、`styles.css`：静态查询页面。
+- `scripts/`、`config/`、`tests/`：正式无 Token 采集、历史恢复、公开请求模板及离线测试。
+- `.github/workflows/pages.yml`：GitHub Actions 定时采集和 Pages 部署。
+- `meituan_infection_index_backup/`：从已发布站点累计本地 SQLite/CSV 备份，参见[备份说明](meituan_infection_index_backup/README.md)。
+- `meituan_infection_index_capture/`：保留的 Proxyman 抓包与旧接口调试工具，参见[抓取说明](meituan_infection_index_capture/README.md)；当前正式采集不需要它。
+- `data/` 及工具目录下的 `data/`、`captures/`：本机运行产物，不提交 Git。
+
+## GitHub 与本机任务
+
+- 沿用现有 [GitHub 仓库](https://github.com/watice555/meituan-infection-index) 和 `main` 分支，保留完整网页仓库历史；移动本地目录不改变仓库、Pages 地址或仓库设置。
+- Pages 的构建来源为 GitHub Actions，部署环境为 `github-pages`，保持 HTTPS。
+- 云端采集继续使用每日 `00:20 UTC`（北京时间 `08:20`）计划，实际启动时间可能延迟，也可在 GitHub Actions 页面手动运行。
+- 工作流权限仍为 `contents: write`、`pages: write`、`id-token: write`，用于保活提交和 Pages 部署；正式采集不需要配置 Secret。
+- Pages 产物仅包含网页文件、`data/manifest.json` 和 `data/cities/*.json`；抓包、备份、脚本及本地配置不进入站点发布包。
+- 本机已有 LaunchAgent 继续在每天 `11:00` 备份，入口已迁至本项目。新克隆不会自动安装或启动定时任务。
 
 ## 当前范围
 
@@ -22,10 +42,16 @@
 
 ## 本地验证
 
+在项目根目录运行以下命令。工具仅使用 Python 标准库；完整测试需 Python 3.10+（旧 HAR 扫描器使用 `zip(strict=True)`），JavaScript 语法检查需要 Node.js，无需安装日报项目的依赖。
+
 ```bash
 python3 -m unittest discover -s tests -v
+python3 -m unittest discover -s meituan_infection_index_capture/tests -v
+python3 -m unittest discover -s meituan_infection_index_backup/tests -v
 python3 -m py_compile scripts/fetch_data.py scripts/restore_history.py
+python3 -m compileall -q meituan_infection_index_capture meituan_infection_index_backup
 node --check app.js
+zsh -n meituan_infection_index_backup/sync_meituan_index.sh
 ```
 
 本地预览需要先生成 `data/manifest.json` 和 `data/cities/*.json`，再在本目录启动任意静态 HTTP 服务。直接双击 `index.html` 会受到浏览器本地文件读取限制。

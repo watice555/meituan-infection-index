@@ -53,13 +53,26 @@ jobs:
       - name: 运行离线校验
         run: |
           python3 -m unittest discover -s tests -v
+          python3 -m unittest discover -s meituan_infection_index_capture/tests -v
+          python3 -m unittest discover -s meituan_infection_index_backup/tests -v
           python3 -m py_compile scripts/fetch_data.py scripts/restore_history.py
+          python3 -m compileall -q meituan_infection_index_capture meituan_infection_index_backup
           node --check app.js
+
+      - name: 整理公开站点文件
+        id: stage
+        run: |
+          pages_dir="$(mktemp -d "${RUNNER_TEMP}/meituan-pages.XXXXXX")"
+          mkdir -p "${pages_dir}/data/cities"
+          cp .nojekyll index.html app.js styles.css "${pages_dir}/"
+          cp data/manifest.json "${pages_dir}/data/"
+          cp data/cities/*.json "${pages_dir}/data/cities/"
+          echo "path=${pages_dir}" >> "${GITHUB_OUTPUT}"
 
       - name: 上传 Pages 文件
         uses: actions/upload-pages-artifact@v4
         with:
-          path: .
+          path: ${{ steps.stage.outputs.path }}
 
   deploy:
     environment:

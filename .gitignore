@@ -1,6 +1,27 @@
-data/indexes.json
-data/manifest.json
-data/cities/
+# Generated public data and local runtime artifacts
+/data/
+**/captures/
+**/data/
+**/logs/
+/_site/
+*.har
+*.proxymansession
+*.db
+*.sqlite
+*.sqlite3
+
+# Local environments and credentials
+.venv/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python and editor caches
 __pycache__/
 *.py[cod]
+.pytest_cache/
 .DS_Store
+.idea/
+.vscode/
