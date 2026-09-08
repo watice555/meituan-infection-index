@@ -25,6 +25,7 @@ DEFAULT_BASE_URL = "https://watice555.github.io/meituan-infection-index/data/"
 DEFAULT_DATA_DIR = ROOT / "data"
 CITY_FILE = re.compile(r"cities/[0-9]{6}\.json\Z")
 DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}\Z")
+AUTOMATIC_SOURCE = "automatic_archive"
 
 
 class BackupError(RuntimeError):
@@ -108,9 +109,12 @@ def validate_city_document(
         disease_ids.add(disease_id)
         seen_dates: set[str] = set()
         for point in points:
-            if not isinstance(point, list) or len(point) != 2:
+            if not isinstance(point, list) or len(point) not in (2, 3):
                 raise BackupError(f"{entry['city']} {disease} 包含无效数据点")
             date, value = str(point[0]), point[1]
+            point_source = str(point[2]).strip() if len(point) == 3 else AUTOMATIC_SOURCE
+            if not point_source:
+                raise BackupError(f"{entry['city']} {disease} 包含空数据来源")
             if not DATE.fullmatch(date) or date in seen_dates:
                 raise BackupError(f"{entry['city']} {disease} 包含无效或重复日期")
             if not isinstance(value, (int, float)) or not math.isfinite(float(value)):
@@ -125,6 +129,7 @@ def validate_city_document(
                     "material_id": material_id,
                     "date": date,
                     "index_value": float(value),
+                    "point_source": point_source,
                 }
             )
     return records
@@ -166,6 +171,7 @@ def initialize_database(connection: sqlite3.Connection) -> None:
             material_id TEXT NOT NULL,
             date TEXT NOT NULL,
             index_value REAL NOT NULL,
+            point_source TEXT NOT NULL DEFAULT 'automatic_archive',
             source_updated_at TEXT NOT NULL,
             backed_up_at TEXT NOT NULL,
             PRIMARY KEY (city_id, disease_id, date)
@@ -180,6 +186,14 @@ def initialize_database(connection: sqlite3.Connection) -> None:
         );
         """
     )
+    columns = {
+        str(row[1]) for row in connection.execute("PRAGMA table_info(infection_index)")
+    }
+    if "point_source" not in columns:
+        connection.execute(
+            "ALTER TABLE infection_index "
+            "ADD COLUMN point_source TEXT NOT NULL DEFAULT 'automatic_archive'"
+        )
 
 
 def upsert_records(
@@ -196,16 +210,17 @@ def upsert_records(
             """
             INSERT INTO infection_index (
                 city_id, city_name, disease_id, disease_name, material_id, date,
-                index_value, source_updated_at, backed_up_at
+                index_value, point_source, source_updated_at, backed_up_at
             ) VALUES (
                 :city_id, :city_name, :disease_id, :disease_name, :material_id, :date,
-                :index_value, :source_updated_at, :backed_up_at
+                :index_value, :point_source, :source_updated_at, :backed_up_at
             )
             ON CONFLICT (city_id, disease_id, date) DO UPDATE SET
                 city_name = excluded.city_name,
                 disease_name = excluded.disease_name,
                 material_id = excluded.material_id,
                 index_value = excluded.index_value,
+                point_source = excluded.point_source,
                 source_updated_at = excluded.source_updated_at,
                 backed_up_at = excluded.backed_up_at
             """,
@@ -252,7 +267,7 @@ def export_csv(database: Path, output: Path) -> int:
         rows = connection.execute(
             """
             SELECT city_id, city_name, disease_id, disease_name, material_id,
-                   date, index_value, source_updated_at, backed_up_at
+                   date, index_value, point_source, source_updated_at, backed_up_at
             FROM infection_index
             ORDER BY city_name, disease_id, date
             """

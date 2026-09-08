@@ -10,7 +10,7 @@ data/infection_index.csv
 data/last_sync.json
 ```
 
-SQLite 使用 `(city_id, disease_id, date)` 作为唯一键。每次同步会更新美团修订过的近期数值、追加新日期，但不会删除已经在本地保存的旧日期。CSV 每次从 SQLite 全量重建，使用 UTF-8 BOM，方便 Excel 打开。
+SQLite 使用 `(city_id, disease_id, date)` 作为唯一键，并在 `point_source` 字段保存 `automatic_archive` 或网页数据携带的手工来源代码。每次同步会更新美团修订过的近期数值、追加新日期，但不会删除已经在本地保存的旧日期；已有数据库会在下次同步时自动增加来源字段。CSV 每次从 SQLite 全量重建，使用 UTF-8 BOM，方便 Excel 打开。
 
 在独立项目 `~/Projects_local/meituan-infection-index` 根目录手动同步：
 

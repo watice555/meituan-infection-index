@@ -12,9 +12,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from backup import (
+    AUTOMATIC_SOURCE,
     BackupError,
     export_csv,
     fetch_json,
+    initialize_database,
     upsert_records,
     validate_city_document,
     validate_manifest,
@@ -79,6 +81,42 @@ class BackupTests(unittest.TestCase):
         records = validate_city_document(entry, sample_city())
         self.assertEqual(len(records), 70)
         self.assertEqual(records[0]["city_id"], "330100")
+        self.assertEqual(records[0]["point_source"], AUTOMATIC_SOURCE)
+
+    def test_city_document_preserves_manual_point_source(self) -> None:
+        entry = validate_manifest(sample_manifest(), 1)[0]
+        city = sample_city()
+        city["series"][2]["points"][0].append("manual_hangzhou_xlsx")
+        records = validate_city_document(entry, city)
+        manual = next(
+            record
+            for record in records
+            if record["disease_id"] == 3 and record["date"] == "2026-08-01"
+        )
+        self.assertEqual(manual["point_source"], "manual_hangzhou_xlsx")
+
+    def test_existing_database_gains_point_source_column(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "legacy.sqlite3"
+            with sqlite3.connect(database) as connection:
+                connection.execute(
+                    """
+                    CREATE TABLE infection_index (
+                        city_id TEXT NOT NULL, city_name TEXT NOT NULL,
+                        disease_id INTEGER NOT NULL, disease_name TEXT NOT NULL,
+                        material_id TEXT NOT NULL, date TEXT NOT NULL,
+                        index_value REAL NOT NULL, source_updated_at TEXT NOT NULL,
+                        backed_up_at TEXT NOT NULL,
+                        PRIMARY KEY (city_id, disease_id, date)
+                    )
+                    """
+                )
+                initialize_database(connection)
+                columns = {
+                    row[1]: row for row in connection.execute("PRAGMA table_info(infection_index)")
+                }
+        self.assertIn("point_source", columns)
+        self.assertEqual(columns["point_source"][4], "'automatic_archive'")
 
     def test_upsert_revises_overlap_and_preserves_local_history(self) -> None:
         entry = validate_manifest(sample_manifest(), 1)[0]
@@ -104,10 +142,16 @@ class BackupTests(unittest.TestCase):
                 revised_value = connection.execute(
                     "SELECT index_value FROM infection_index WHERE disease_id = 1 AND date = '2026-08-01'"
                 ).fetchone()[0]
+                revised_source = connection.execute(
+                    "SELECT point_source FROM infection_index "
+                    "WHERE disease_id = 1 AND date = '2026-08-01'"
+                ).fetchone()[0]
             csv_text = csv_path.read_text(encoding="utf-8-sig")
         self.assertEqual(old_value, 50.0)
         self.assertEqual(revised_value, 201.0)
+        self.assertEqual(revised_source, AUTOMATIC_SOURCE)
         self.assertIn("杭州市", csv_text)
+        self.assertIn("point_source", csv_text.splitlines()[0])
 
 
 if __name__ == "__main__":
