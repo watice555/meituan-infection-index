@@ -538,7 +538,9 @@ async function start() {
         [state.startDate, state.endDate] = [state.endDate, state.startDate];
       }
     } else {
-      state.range = ["14", "30", "90", "all"].includes(requestedRange) ? requestedRange : "14";
+      state.range = ["14", "30", "90", "365", "all"].includes(requestedRange)
+        ? requestedRange
+        : "14";
       state.startDate = "";
       state.endDate = "";
     }

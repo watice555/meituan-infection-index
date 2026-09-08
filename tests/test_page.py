@@ -86,6 +86,17 @@ class PageTests(unittest.TestCase):
         self.assertIn("function visibleBounds(series, points)", javascript)
         self.assertIn('["date", "city", "disease", "index_value", "source"]', javascript)
 
+    def test_year_range_and_related_links_are_present(self) -> None:
+        html = (ROOT / "index.html").read_text(encoding="utf-8")
+        javascript = (ROOT / "app.js").read_text(encoding="utf-8")
+        self.assertIn('data-range="365"', html)
+        self.assertIn(">365 天</button>", html)
+        self.assertIn('["14", "30", "90", "365", "all"]', javascript)
+        self.assertIn('href="https://watice555.github.io/flu_weekly/"', html)
+        self.assertIn("流感样病例周报存档", html)
+        self.assertIn('href="mailto:wuth.5@qq.com"', html)
+        self.assertIn("贡献历史数据：wuth.5@qq.com", html)
+
 
 if __name__ == "__main__":
     unittest.main()

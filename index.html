@@ -16,14 +16,20 @@
     />
     <meta property="og:type" content="website" />
     <title>美团指数存档</title>
-    <link rel="stylesheet" href="./styles.css" />
-    <script src="./app.js" defer></script>
+    <link rel="stylesheet" href="./styles.css?v=20260908-1" />
+    <script src="./app.js?v=20260908-1" defer></script>
   </head>
   <body>
     <main class="page-shell">
       <header class="page-heading">
-        <h1>美团指数存档</h1>
-        <p>选择城市、病种和日期范围，查看并导出美团指数历史数据。</p>
+        <div class="heading-copy">
+          <h1>美团指数存档</h1>
+          <p>选择城市、病种和日期范围，查看并导出美团指数历史数据。</p>
+        </div>
+        <nav class="page-links" aria-label="相关链接">
+          <a href="https://watice555.github.io/flu_weekly/">流感样病例周报存档</a>
+          <a href="mailto:wuth.5@qq.com">贡献历史数据：wuth.5@qq.com</a>
+        </nav>
       </header>
 
       <section class="query-panel" aria-label="查询条件">
@@ -41,6 +47,7 @@
             <button type="button" data-range="14" aria-pressed="true">14 天</button>
             <button type="button" data-range="30" aria-pressed="false">30 天</button>
             <button type="button" data-range="90" aria-pressed="false">90 天</button>
+            <button type="button" data-range="365" aria-pressed="false">365 天</button>
             <button type="button" data-range="all" aria-pressed="false">全部</button>
           </div>
         </fieldset>
