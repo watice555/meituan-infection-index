@@ -229,13 +229,25 @@ def fetch_city(
 
 
 def normalize_series(item: dict[str, Any]) -> dict[str, Any]:
+    points = []
+    for point in item["points"]:
+        if not isinstance(point, list) or len(point) not in (2, 3):
+            raise FetchError("历史 JSON 包含无效数据点")
+        date, value = point[:2]
+        normalized = [normalize_date(date), float(value)]
+        if len(point) == 3:
+            source = str(point[2]).strip()
+            if not source:
+                raise FetchError("历史 JSON 包含空数据来源")
+            normalized.append(source)
+        points.append(normalized)
     return {
         "city": str(item["city"]),
         "city_id": str(item["city_id"]),
         "disease": str(item["disease"]),
         "disease_id": int(item["disease_id"]),
         "material_id": str(item["material_id"]),
-        "points": [[normalize_date(date), float(value)] for date, value in item["points"]],
+        "points": points,
     }
 
 
@@ -280,6 +292,22 @@ def load_history(path: Path | None) -> dict[tuple[str, int], dict[str, Any]]:
     return history
 
 
+def merge_history_sources(
+    seed: dict[tuple[str, int], dict[str, Any]],
+    published: dict[tuple[str, int], dict[str, Any]],
+) -> dict[tuple[str, int], dict[str, Any]]:
+    merged = copy.deepcopy(seed)
+    for key, item in published.items():
+        previous = merged.get(key)
+        points = {point[0]: point[1:] for point in (previous or {}).get("points", [])}
+        points.update({point[0]: point[1:] for point in item["points"]})
+        merged[key] = {
+            **item,
+            "points": [[date, *points[date]] for date in sorted(points)],
+        }
+    return merged
+
+
 def merge_series(
     history: dict[tuple[str, int], dict[str, Any]],
     fresh: list[dict[str, Any]],
@@ -288,11 +316,11 @@ def merge_series(
     for item in fresh:
         key = (item["city_id"], item["disease_id"])
         previous = merged.get(key)
-        points = {date: value for date, value in (previous or {}).get("points", [])}
-        points.update({date: value for date, value in item["points"]})
+        points = {point[0]: point[1:] for point in (previous or {}).get("points", [])}
+        points.update({point[0]: point[1:] for point in item["points"]})
         merged[key] = {
             **item,
-            "points": [[date, points[date]] for date in sorted(points)],
+            "points": [[date, *points[date]] for date in sorted(points)],
         }
     return sorted(merged.values(), key=lambda item: (item["city_id"], item["disease_id"]))
 
@@ -361,12 +389,13 @@ def write_documents(output_dir: Path, document: dict[str, Any]) -> dict[str, Any
 def collect(
     template_path: Path,
     history_path: Path | None,
+    seed_path: Path | None,
     output_dir: Path,
     timeout: float,
     delay: float,
 ) -> dict[str, Any]:
     template = load_template(template_path)
-    history = load_history(history_path)
+    history = merge_history_sources(load_history(seed_path), load_history(history_path))
     fresh: list[dict[str, Any]] = []
     for index, (city, city_id) in enumerate(CITIES):
         if index and delay:
@@ -387,6 +416,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--template", type=Path, default=DEFAULT_TEMPLATE)
     parser.add_argument("--history", type=Path)
+    parser.add_argument("--seed", type=Path)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--delay", type=float, default=0.3)
@@ -398,6 +428,7 @@ def main() -> int:
     document = collect(
         args.template,
         args.history,
+        args.seed,
         args.output_dir,
         args.timeout,
         args.delay,

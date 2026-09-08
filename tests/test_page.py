@@ -65,6 +65,27 @@ class PageTests(unittest.TestCase):
         self.assertIn("manifest.version !== 2", javascript)
         self.assertNotIn('fetch("./data/indexes.json"', javascript)
 
+    def test_missing_dates_use_calendar_spacing_and_break_the_line(self) -> None:
+        html = (ROOT / "index.html").read_text(encoding="utf-8")
+        javascript = (ROOT / "app.js").read_text(encoding="utf-8")
+        self.assertIn('id="coverage-summary"', html)
+        self.assertIn("折线不会跨过数据缺口", html)
+        self.assertIn("function splitSegments(points)", javascript)
+        self.assertIn("point.time - current.at(-1).time > dayMilliseconds", javascript)
+        self.assertIn("(times[index] - minTime) / timeSpread", javascript)
+        self.assertNotIn("index / (points.length - 1)", javascript)
+        self.assertIn("rawMax / rawMin >= 20", javascript)
+        self.assertIn("纵轴自动使用对数比例", javascript)
+
+    def test_calendar_ranges_and_point_sources_are_visible(self) -> None:
+        html = (ROOT / "index.html").read_text(encoding="utf-8")
+        javascript = (ROOT / "app.js").read_text(encoding="utf-8")
+        self.assertIn("记录来源", html)
+        self.assertIn('point[2] === "manual_hangzhou_xlsx"', javascript)
+        self.assertIn("latest.setDate(latest.getDate() - Number(state.range) + 1)", javascript)
+        self.assertIn("function visibleBounds(series, points)", javascript)
+        self.assertIn('["date", "city", "disease", "index_value", "source"]', javascript)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -216,6 +216,23 @@ input:focus-visible {
   font-size: 16px;
 }
 
+.coverage-summary,
+.chart-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.coverage-summary {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.chart-note {
+  margin-top: 2px;
+}
+
 .table-heading {
   display: flex;
   align-items: center;
@@ -268,6 +285,11 @@ tbody tr:last-child td {
 
 .numeric {
   text-align: right;
+}
+
+.manual-source {
+  color: #8a5a00;
+  font-weight: 650;
 }
 
 @media (max-width: 960px) {

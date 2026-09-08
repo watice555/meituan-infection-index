@@ -15,6 +15,7 @@ from scripts.fetch_data import (
     extract_series,
     load_template,
     load_history,
+    merge_history_sources,
     merge_series,
     normalize_date,
     post_index,
@@ -100,12 +101,36 @@ class FetchDataTests(unittest.TestCase):
 
     def test_merge_revises_overlap_and_preserves_old_points(self) -> None:
         old = extract_series(sample_payload(value=90.0), "杭州市", "330100", "16427")
-        old["points"].insert(0, ["2026-08-16", 80.0])
+        old["points"].insert(0, ["2026-08-16", 80.0, "manual_hangzhou_xlsx"])
         fresh = extract_series(sample_payload(value=110.0), "杭州市", "330100", "16427")
         result = merge_series({("330100", 4): old}, [fresh])
         self.assertEqual(
             result[0]["points"],
-            [["2026-08-16", 80.0], ["2026-08-17", 110.0], ["2026-08-18", 120.0]],
+            [
+                ["2026-08-16", 80.0, "manual_hangzhou_xlsx"],
+                ["2026-08-17", 110.0],
+                ["2026-08-18", 120.0],
+            ],
+        )
+
+    def test_published_history_overrides_seed_on_overlap(self) -> None:
+        seed_item = extract_series(sample_payload(value=90.0), "杭州市", "330100", "16427")
+        seed_item["points"] = [
+            ["2026-08-16", 80.0, "manual_hangzhou_xlsx"],
+            ["2026-08-17", 90.0, "manual_hangzhou_xlsx"],
+        ]
+        published_item = extract_series(sample_payload(value=110.0), "杭州市", "330100", "16427")
+        merged = merge_history_sources(
+            {("330100", 4): seed_item},
+            {("330100", 4): published_item},
+        )
+        self.assertEqual(
+            merged[("330100", 4)]["points"],
+            [
+                ["2026-08-16", 80.0, "manual_hangzhou_xlsx"],
+                ["2026-08-17", 110.0],
+                ["2026-08-18", 120.0],
+            ],
         )
 
     def test_round_trip_public_document(self) -> None:

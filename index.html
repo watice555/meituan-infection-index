@@ -63,6 +63,8 @@
             <canvas id="trend-chart" role="img" aria-label="指数趋势折线图"></canvas>
             <div id="chart-tooltip" class="chart-tooltip" hidden></div>
           </div>
+          <p id="coverage-summary" class="coverage-summary"></p>
+          <p id="chart-note" class="chart-note">缺失日期保留为空，折线不会跨过数据缺口。</p>
         </article>
 
         <article class="table-card">
@@ -78,6 +80,7 @@
                   <th scope="col">城市</th>
                   <th scope="col">病种</th>
                   <th scope="col" class="numeric">指数值</th>
+                  <th scope="col">记录来源</th>
                 </tr>
               </thead>
               <tbody id="data-table"></tbody>

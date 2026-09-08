@@ -25,6 +25,8 @@ const elements = {
   dashboard: document.querySelector("#dashboard"),
   canvas: document.querySelector("#trend-chart"),
   tooltip: document.querySelector("#chart-tooltip"),
+  coverage: document.querySelector("#coverage-summary"),
+  chartNote: document.querySelector("#chart-note"),
   table: document.querySelector("#data-table"),
   download: document.querySelector("#download-csv"),
 };
@@ -36,6 +38,12 @@ const formatDate = new Intl.DateTimeFormat("zh-CN", {
   day: "numeric",
 });
 const formatShortDate = new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric" });
+const formatAxisDate = new Intl.DateTimeFormat("zh-CN", {
+  year: "2-digit",
+  month: "numeric",
+  day: "numeric",
+});
+const dayMilliseconds = 24 * 60 * 60 * 1000;
 
 function parseDate(date) {
   const [year, month, day] = date.split("-").map(Number);
@@ -44,6 +52,17 @@ function parseDate(date) {
 
 function displayDate(date) {
   return formatDate.format(parseDate(date));
+}
+
+function pointSource(point) {
+  return point[2] === "manual_hangzhou_xlsx" ? "手工历史" : "自动归档";
+}
+
+function dateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function unique(values) {
@@ -124,7 +143,19 @@ function visiblePoints(series) {
     );
   }
   if (state.range === "all") return series.points;
-  return series.points.slice(-Number(state.range));
+  const latest = parseDate(series.points.at(-1)[0]);
+  latest.setDate(latest.getDate() - Number(state.range) + 1);
+  const cutoff = dateKey(latest);
+  return series.points.filter(([date]) => date >= cutoff);
+}
+
+function visibleBounds(series, points) {
+  if (state.range === "custom") return [state.startDate, state.endDate];
+  if (state.range === "all") return [points[0][0], points.at(-1)[0]];
+  const end = parseDate(series.points.at(-1)[0]);
+  const start = new Date(end);
+  start.setDate(start.getDate() - Number(state.range) + 1);
+  return [dateKey(start), dateKey(end)];
 }
 
 function updateDateBounds(series) {
@@ -157,13 +188,21 @@ function syncUrl() {
 }
 
 function renderTable(points) {
-  const rows = [...points].reverse().map(([date, value]) => {
+  const rows = [...points].reverse().map((point) => {
+    const [date, value] = point;
     const row = document.createElement("tr");
-    const values = [displayDate(date), state.city, state.disease, formatValue.format(value)];
+    const values = [
+      displayDate(date),
+      state.city,
+      state.disease,
+      formatValue.format(value),
+      pointSource(point),
+    ];
     values.forEach((valueText, index) => {
       const cell = document.createElement("td");
       cell.textContent = valueText;
       if (index === 3) cell.className = "numeric";
+      if (index === 4 && point[2] === "manual_hangzhou_xlsx") cell.className = "manual-source";
       row.append(cell);
     });
     return row;
@@ -175,22 +214,75 @@ function chartGeometry(points) {
   const rect = elements.canvas.getBoundingClientRect();
   const width = Math.max(300, rect.width);
   const height = Math.max(260, rect.height);
-  const padding = { top: 22, right: 22, bottom: 42, left: 58 };
+  const padding = { top: 22, right: 22, bottom: 42, left: 94 };
   const values = points.map((point) => point[1]);
-  let min = Math.min(...values);
-  let max = Math.max(...values);
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  const useLogScale = rawMin > 0 && rawMax / rawMin >= 20;
+  const scaleValue = (value) => (useLogScale ? Math.log10(value) : value);
+  const displayValue = (value) => (useLogScale ? 10 ** value : value);
+  let min = scaleValue(rawMin);
+  let max = scaleValue(rawMax);
   const spread = max - min || Math.max(Math.abs(max) * 0.1, 1);
-  min = Math.max(0, min - spread * 0.14);
+  min = useLogScale ? min - spread * 0.08 : Math.max(0, min - spread * 0.14);
   max += spread * 0.14;
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
-  const mapped = points.map(([date, value], index) => ({
-    date,
-    value,
-    x: padding.left + (points.length === 1 ? plotWidth / 2 : (index / (points.length - 1)) * plotWidth),
-    y: padding.top + ((max - value) / (max - min || 1)) * plotHeight,
-  }));
-  return { width, height, padding, min, max, plotWidth, plotHeight, mapped };
+  const times = points.map(([date]) => parseDate(date).getTime());
+  const [startDate, endDate] = visibleBounds(selectedSeries(), points);
+  const minTime = parseDate(startDate).getTime();
+  const maxTime = parseDate(endDate).getTime();
+  const timeSpread = maxTime - minTime;
+  const mapped = points.map((point, index) => {
+    const [date, value] = point;
+    return {
+      date,
+      value,
+      source: pointSource(point),
+      time: times[index],
+      x: padding.left + (timeSpread ? ((times[index] - minTime) / timeSpread) * plotWidth : plotWidth / 2),
+      y: padding.top + ((max - scaleValue(value)) / (max - min || 1)) * plotHeight,
+    };
+  });
+  return {
+    width, height, padding, min, max, minTime, maxTime, plotWidth, plotHeight,
+    mapped, displayValue, useLogScale,
+  };
+}
+
+function splitSegments(points) {
+  return points.reduce((segments, point) => {
+    const current = segments.at(-1);
+    if (!current || point.time - current.at(-1).time > dayMilliseconds) segments.push([point]);
+    else current.push(point);
+    return segments;
+  }, []);
+}
+
+function drawSegment(context, segment, geometry, gradient) {
+  if (segment.length > 1) {
+    context.beginPath();
+    segment.forEach((point, index) => {
+      if (index === 0) context.moveTo(point.x, point.y);
+      else context.lineTo(point.x, point.y);
+    });
+    context.lineTo(segment.at(-1).x, geometry.height - geometry.padding.bottom);
+    context.lineTo(segment[0].x, geometry.height - geometry.padding.bottom);
+    context.closePath();
+    context.fillStyle = gradient;
+    context.fill();
+
+    context.beginPath();
+    segment.forEach((point, index) => {
+      if (index === 0) context.moveTo(point.x, point.y);
+      else context.lineTo(point.x, point.y);
+    });
+    context.strokeStyle = "#0b7f78";
+    context.lineWidth = 3;
+    context.lineJoin = "round";
+    context.lineCap = "round";
+    context.stroke();
+  }
 }
 
 function drawChart(points, highlightedIndex = null) {
@@ -211,7 +303,9 @@ function drawChart(points, highlightedIndex = null) {
 
   for (let tick = 0; tick <= 4; tick += 1) {
     const y = geometry.padding.top + (tick / 4) * geometry.plotHeight;
-    const value = geometry.max - (tick / 4) * (geometry.max - geometry.min);
+    const value = geometry.displayValue(
+      geometry.max - (tick / 4) * (geometry.max - geometry.min),
+    );
     context.beginPath();
     context.moveTo(geometry.padding.left, y);
     context.lineTo(geometry.width - geometry.padding.right, y);
@@ -221,43 +315,22 @@ function drawChart(points, highlightedIndex = null) {
     context.fillText(formatValue.format(value), geometry.padding.left - 10, y);
   }
 
-  const labelIndexes = unique([
-    0,
-    Math.floor((points.length - 1) / 3),
-    Math.floor(((points.length - 1) * 2) / 3),
-    points.length - 1,
-  ]);
   context.textAlign = "center";
   context.textBaseline = "top";
-  labelIndexes.forEach((index) => {
-    const point = geometry.mapped[index];
-    context.fillText(formatShortDate.format(parseDate(point.date)), point.x, geometry.height - 25);
-  });
+  for (let tick = 0; tick <= 3; tick += 1) {
+    const ratio = tick / 3;
+    const time = geometry.minTime + ratio * (geometry.maxTime - geometry.minTime);
+    const x = geometry.padding.left + ratio * geometry.plotWidth;
+    const label = geometry.maxTime === geometry.minTime
+      ? formatShortDate.format(new Date(time))
+      : formatAxisDate.format(new Date(time));
+    context.fillText(label, x, geometry.height - 25);
+  }
 
   const gradient = context.createLinearGradient(0, geometry.padding.top, 0, geometry.height);
   gradient.addColorStop(0, "rgba(11, 127, 120, 0.22)");
   gradient.addColorStop(1, "rgba(11, 127, 120, 0)");
-  context.beginPath();
-  geometry.mapped.forEach((point, index) => {
-    if (index === 0) context.moveTo(point.x, point.y);
-    else context.lineTo(point.x, point.y);
-  });
-  context.lineTo(geometry.mapped.at(-1).x, geometry.height - geometry.padding.bottom);
-  context.lineTo(geometry.mapped[0].x, geometry.height - geometry.padding.bottom);
-  context.closePath();
-  context.fillStyle = gradient;
-  context.fill();
-
-  context.beginPath();
-  geometry.mapped.forEach((point, index) => {
-    if (index === 0) context.moveTo(point.x, point.y);
-    else context.lineTo(point.x, point.y);
-  });
-  context.strokeStyle = "#0b7f78";
-  context.lineWidth = 3;
-  context.lineJoin = "round";
-  context.lineCap = "round";
-  context.stroke();
+  splitSegments(geometry.mapped).forEach((segment) => drawSegment(context, segment, geometry, gradient));
 
   geometry.mapped.forEach((point, index) => {
     const active = index === highlightedIndex;
@@ -293,7 +366,7 @@ function showTooltip(event) {
     return;
   }
   drawChart(state.points, nearest.index);
-  elements.tooltip.innerHTML = `<span>${displayDate(nearest.point.date)}</span><strong>${formatValue.format(nearest.point.value)}</strong>`;
+  elements.tooltip.innerHTML = `<span>${displayDate(nearest.point.date)} · ${nearest.point.source}</span><strong>${formatValue.format(nearest.point.value)}</strong>`;
   elements.tooltip.style.left = `${nearest.point.x}px`;
   elements.tooltip.style.top = `${nearest.point.y}px`;
   elements.tooltip.hidden = false;
@@ -313,8 +386,29 @@ function render() {
   elements.dashboard.hidden = false;
   elements.canvas.setAttribute(
     "aria-label",
-    `${state.city}${state.disease}趋势图，从 ${displayDate(points[0][0])} 到 ${displayDate(points.at(-1)[0])}`,
+    `${state.city}${state.disease}趋势图，从 ${displayDate(points[0][0])} 到 ${displayDate(points.at(-1)[0])}，折线在缺失日期处断开`,
   );
+  const [visibleStart, visibleEnd] = visibleBounds(series, points);
+  const start = parseDate(visibleStart);
+  const end = parseDate(visibleEnd);
+  const calendarDays = Math.round((end - start) / dayMilliseconds) + 1;
+  const segments = points.reduce((count, point, index) => {
+    if (index === 0) return 1;
+    return count + (parseDate(point[0]) - parseDate(points[index - 1][0]) > dayMilliseconds ? 1 : 0);
+  }, 0);
+  const manualDays = points.filter((point) => point[2] === "manual_hangzhou_xlsx").length;
+  const details = [
+    `记录 ${points.length} / ${calendarDays} 天`,
+    `缺失 ${calendarDays - points.length} 天`,
+    `${segments} 个连续数据段`,
+  ];
+  if (manualDays) details.push(`其中手工历史 ${manualDays} 天`);
+  elements.coverage.textContent = details.join(" · ");
+  const values = points.map((point) => point[1]);
+  const useLogScale = Math.min(...values) > 0 && Math.max(...values) / Math.min(...values) >= 20;
+  elements.chartNote.textContent = useLogScale
+    ? "缺失日期保留为空，折线不会跨过数据缺口。当前数值跨度较大，纵轴自动使用对数比例。"
+    : "缺失日期保留为空，折线不会跨过数据缺口。";
   renderTable(points);
   requestAnimationFrame(() => drawChart(points));
   syncUrl();
@@ -322,8 +416,8 @@ function render() {
 
 function downloadCsv() {
   const rows = [
-    ["date", "city", "disease", "index_value"],
-    ...state.points.map(([date, value]) => [date, state.city, state.disease, value]),
+    ["date", "city", "disease", "index_value", "source"],
+    ...state.points.map((point) => [point[0], state.city, state.disease, point[1], pointSource(point)]),
   ];
   const csv = `\ufeff${rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\r\n")}\r\n`;
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
