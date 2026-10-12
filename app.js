@@ -212,9 +212,10 @@ function renderTable(points) {
 
 function chartGeometry(points) {
   const rect = elements.canvas.getBoundingClientRect();
-  const width = Math.max(300, rect.width);
+  const width = rect.width;
   const height = Math.max(260, rect.height);
-  const padding = { top: 22, right: 22, bottom: 42, left: 94 };
+  const compact = width < 580;
+  const padding = { top: 22, right: 12, bottom: 42, left: compact ? 58 : 94 };
   const values = points.map((point) => point[1]);
   const rawMin = Math.min(...values);
   const rawMax = Math.max(...values);
@@ -246,7 +247,7 @@ function chartGeometry(points) {
   });
   return {
     width, height, padding, min, max, minTime, maxTime, plotWidth, plotHeight,
-    mapped, displayValue, useLogScale,
+    mapped, displayValue, useLogScale, compact,
   };
 }
 
@@ -312,19 +313,25 @@ function drawChart(points, highlightedIndex = null) {
     context.stroke();
     context.textAlign = "right";
     context.textBaseline = "middle";
-    context.fillText(formatValue.format(value), geometry.padding.left - 10, y);
+    const label = geometry.compact && value >= 10000
+      ? `${formatValue.format(value / 10000)}万`
+      : formatValue.format(value);
+    context.fillText(label, geometry.padding.left - 8, y);
   }
 
   context.textAlign = "center";
   context.textBaseline = "top";
-  for (let tick = 0; tick <= 3; tick += 1) {
-    const ratio = tick / 3;
+  const tickCount = geometry.maxTime === geometry.minTime ? 0 : (geometry.compact ? 2 : 3);
+  for (let tick = 0; tick <= tickCount; tick += 1) {
+    const ratio = tickCount ? tick / tickCount : 0.5;
     const time = geometry.minTime + ratio * (geometry.maxTime - geometry.minTime);
     const x = geometry.padding.left + ratio * geometry.plotWidth;
     const label = geometry.maxTime === geometry.minTime
       ? formatShortDate.format(new Date(time))
       : formatAxisDate.format(new Date(time));
-    context.fillText(label, x, geometry.height - 25);
+    const halfLabel = context.measureText(label).width / 2;
+    const labelX = Math.max(halfLabel, Math.min(geometry.width - halfLabel, x));
+    context.fillText(label, labelX, geometry.height - 25);
   }
 
   const gradient = context.createLinearGradient(0, geometry.padding.top, 0, geometry.height);
@@ -367,12 +374,19 @@ function showTooltip(event) {
   }
   drawChart(state.points, nearest.index);
   elements.tooltip.innerHTML = `<span>${displayDate(nearest.point.date)} · ${nearest.point.source}</span><strong>${formatValue.format(nearest.point.value)}</strong>`;
-  elements.tooltip.style.left = `${nearest.point.x}px`;
-  elements.tooltip.style.top = `${nearest.point.y}px`;
   elements.tooltip.hidden = false;
+  const tooltip = elements.tooltip.getBoundingClientRect();
+  const canvas = elements.canvas.getBoundingClientRect();
+  const left = Math.max(0, Math.min(canvas.width - tooltip.width, nearest.point.x - tooltip.width / 2));
+  const preferredTop = nearest.point.y - tooltip.height - 14;
+  const top = Math.max(0, Math.min(canvas.height - tooltip.height,
+    preferredTop >= 0 ? preferredTop : nearest.point.y + 14));
+  elements.tooltip.style.left = `${left}px`;
+  elements.tooltip.style.top = `${top}px`;
 }
 
 function render() {
+  elements.tooltip.hidden = true;
   const series = selectedSeries();
   updateDateBounds(series);
   const points = visiblePoints(series);
