@@ -28,6 +28,7 @@ const elements = {
   coverage: document.querySelector("#coverage-summary"),
   chartNote: document.querySelector("#chart-note"),
   table: document.querySelector("#data-table"),
+  tableContext: document.querySelector("#table-context"),
   download: document.querySelector("#download-csv"),
 };
 
@@ -188,21 +189,20 @@ function syncUrl() {
 }
 
 function renderTable(points) {
+  elements.tableContext.textContent = `${state.city} · ${state.disease}`;
   const rows = [...points].reverse().map((point) => {
     const [date, value] = point;
     const row = document.createElement("tr");
     const values = [
-      displayDate(date),
-      state.city,
-      state.disease,
+      date,
       formatValue.format(value),
       pointSource(point),
     ];
     values.forEach((valueText, index) => {
       const cell = document.createElement("td");
       cell.textContent = valueText;
-      if (index === 3) cell.className = "numeric";
-      if (index === 4 && point[2] === "manual_hangzhou_xlsx") cell.className = "manual-source";
+      if (index === 1) cell.className = "numeric";
+      if (index === 2 && point[2] === "manual_hangzhou_xlsx") cell.className = "manual-source";
       row.append(cell);
     });
     return row;

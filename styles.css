@@ -285,6 +285,7 @@ input:focus-visible {
 }
 
 .download-button {
+  flex-shrink: 0;
   height: 42px;
   padding: 0 16px;
   border: 1px solid rgba(11, 127, 120, 0.28);
@@ -297,6 +298,13 @@ input:focus-visible {
 
 .table-scroll {
   overflow-x: auto;
+}
+
+.table-context {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 table {
@@ -406,6 +414,11 @@ tbody tr:last-child td {
   #trend-chart {
     min-height: 310px;
     height: 310px;
+  }
+
+  th,
+  td {
+    padding: 14px 6px;
   }
 }
 
